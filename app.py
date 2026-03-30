@@ -6,14 +6,15 @@ import glob
 import PyPDF2
 
 # --- 画面のUI設定 ---
-st.set_page_config(page_title="補助金・助成金判定アプリ", page_icon="💰")
-st.title("💰 補助金・助成金 簡易判定アプリ")
-st.write("自社の状況や購入したいものを入力すると、AIが最新の資料データを元に、利用できそうな補助金・助成金の候補と要件の合致度を判定します。")
-st.warning("⚠️ 注意: AIの回答は推測を含む参考情報です。実際の応募にあたっては、必ず最新の公募要領を各省庁・自治体の公式サイトで確認するか、専門家にご相談ください。")
+st.set_page_config(page_title="省力化投資補助金 判定アプリ", page_icon="🏢")
+st.title("🏢 中小企業省力化投資補助金 簡易判定アプリ")
+st.write("自社の状況や導入したい製品を入力すると、最新の公募要領や対象製品リスト（独自データ）に基づき、要件を満たす可能性があるかをAIが判定します。")
+st.warning("⚠️ 注意: AIの回答は参考情報です。実際の申請にあたっては、必ず最新の公募要領をご確認いただくか、認定支援機関等の専門家にご相談ください。")
 
 # --- Googleドライブからの情報取得 ---
 @st.cache_data(ttl=3600) # 1時間ごとに再読み込み
 def load_drive_data():
+    # ご指定のGoogleドライブフォルダURL
     folder_url = "https://drive.google.com/drive/u/0/folders/1bLt7HvMpvE41k5IBZEylMHoGxH_UlsET"
     output_folder = "drive_data"
     os.makedirs(output_folder, exist_ok=True)
@@ -44,11 +45,11 @@ def load_drive_data():
                 pass
                 
     if not all_text.strip():
-        return "※現在、読み込める参考資料（PDFやテキスト）がフォルダにありません。一般的な最新情報のみで回答します。"
+        return "※現在、読み込める参考資料がフォルダにありません。"
     return all_text
 
 # データ読み込みの実行
-with st.spinner("最新の補助金データを読み込んでいます..."):
+with st.spinner("最新の補助金・対象製品データを読み込んでいます..."):
     context_text = load_drive_data()
 
 # --- 入力フォーム ---
@@ -57,21 +58,21 @@ st.header("📝 貴社の情報を入力してください")
 # 単一入力（従業員数）
 emp_count = st.number_input("従業員数（人）", min_value=0, value=5, step=1)
 
-st.write("※以下の項目は、複数ある場合はカンマ（,）やスペース、改行で区切って入力してください。")
+st.write("※以下の項目は、複数ある場合はカンマ（,）や改行で区切って入力してください。")
 
 # 複数入力可能項目
-industry = st.text_input("業種・業界", placeholder="例：製造業, 飲食業, IT業")
-location = st.text_input("事業所の所在地", placeholder="例：東京都港区, 大阪府大阪市")
-items_to_buy = st.text_area("購入したいモノ・サービス", placeholder="例：顧客管理システム, 業務用オーブン, Webサイト制作")
-budget = st.text_area("購入したいモノ・サービスの合計金額", placeholder="例：システム500万円, オーブン200万円")
+industry = st.text_input("業種・業界", placeholder="例：製造業, 飲食業, 宿泊業")
+location = st.text_input("事業所の所在地", placeholder="例：埼玉県戸田市, 東京都港区")
+items_to_buy = st.text_area("購入（導入）したいモノ・サービス", placeholder="例：スチームコンベクションオーブン, 配膳ロボット, 券売機")
+budget = st.text_area("購入したいモノ・サービスの合計金額", placeholder="例：オーブン200万円, ロボット150万円")
 
 # ボタンが押されたときの処理
-if st.button("利用可能な補助金を判定する", type="primary"):
+if st.button("補助金の要件にあてはまるか判定する", type="primary"):
     if not industry or not location or not items_to_buy or not budget:
         st.warning("すべての項目に入力してください。")
     else:
         try:
-            # Secretsから安全にAPIキーを取得
+            # SecretsからAPIキーを取得（前回修正した安全な記述です）
             api_key = st.secrets["GOOGLE_API_KEY"]
             
             # AIの準備と実行
@@ -80,9 +81,10 @@ if st.button("利用可能な補助金を判定する", type="primary"):
             
             # AIへの指示（プロンプト）
             prompt = f"""
-            あなたは日本の補助金・助成金の専門家です。
-            以下の【企業情報】と【購入予定】、そして【参考資料】（最新の公募要領やガイドラインのデータ）に基づいて、
-            事業者が「自社で利用できるか」を自分で判断できるように、利用可能な補助金や助成金を提案してください。
+            あなたは認定経営革新等支援機関として実務を行う、補助金の専門家AIです。
+            ユーザーは「中小企業省力化投資補助金」の活用を検討している事業者です。
+            以下の【企業情報】と【購入予定】、そして【参考資料】（Googleドライブから取得した最新の公募要領やカタログデータ等）に基づいて、
+            この事業者が同補助金の要件に当てはまる可能性がどの程度あるか、専門的かつ分かりやすく判定・解説してください。
 
             【企業情報】
             - 従業員数: {emp_count}人
@@ -97,21 +99,22 @@ if st.button("利用可能な補助金を判定する", type="primary"):
             {context_text}
             
             【出力のルール】
-            1. 【参考資料】の情報を中心に根拠とし、資料にない不足部分は一般的な最新情報で補って回答してください。
-            2. 各補助金について、以下の構成で出力してください。
-               - 補助金の名称
-               - なぜこの要件に当てはまるのか（適合理由）
-               - 想定される補助額・補助率の目安
-               - 申請に向けた今後の具体的なステップや注意点
+            1. 必ず【参考資料】の情報を最優先の判断基準としてください。省力化投資補助金は「カタログ登録されている製品」であることが重要である等の特有の要件を踏まえて判定してください。
+            2. 以下の構成で出力してください。
+               - 【判定結果】（要件を満たす可能性が高い／追加の確認が必要／要件外の可能性が高い、など）
+               - 【適合していると思われるポイント】（従業員数ごとの補助上限額の枠組み、対象業種かどうか等）
+               - 【懸念点・確認が必要な事項】（導入予定の製品が対象カテゴリ（カタログ）に該当するかどうか等）
+               - 【次のアクション】（カタログの確認、事業計画の検討など、事業者が次にすべきこと）
             """
             
-            with st.spinner("情報を分析し、最適な補助金を判定しています..."):
+            with st.spinner("要件と照らし合わせて判定しています..."):
                 response = model.generate_content(prompt)
             
             # 結果の表示
             st.success("✨ 判定が完了しました！")
             st.markdown(response.text)
             
+        except KeyError:
+             st.error("APIキーが設定されていません。StreamlitのSecrets設定を確認してください。")
         except Exception as e:
             st.error(f"エラーが発生しました。（詳細: {e}）")
-            st.info("APIキーの設定や、requirements.txtの記述が正しいか確認してください。")
