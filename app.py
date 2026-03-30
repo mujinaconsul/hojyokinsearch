@@ -1,33 +1,69 @@
 import streamlit as st
 import google.generativeai as genai
+import gdown
+import os
+import glob
+import PyPDF2
 
 # --- 画面のUI設定 ---
-st.set_page_config(page_title="補助金・助成金判定アプリ", page_icon="💰")
-st.title("💰 補助金・助成金 簡易判定アプリ")
-st.write("自社の状況や購入したいものを入力すると、AIが利用できそうな補助金・助成金の候補を提案します。")
-st.warning("⚠️ 注意: AIの回答は推測を含む参考情報です。実際の応募にあたっては、必ず最新の公募要領を各省庁・自治体の公式サイトで確認するか、専門家にご相談ください。")
+st.set_page_config(page_title="独自データAIアシスタント", page_icon="🍷")
+st.title("🍷 独自データAIアシスタント (Googleドライブ連携)")
+st.write("Googleドライブ内のPDFやテキストを読み込み、それを元にAIが回答を出力します。")
+
+# --- 情報の取得と読み込み ---
+@st.cache_data(ttl=3600) # 1時間ごとに再読み込みして最新化する設定
+def load_drive_data():
+    folder_url = "https://drive.google.com/drive/u/0/folders/1bLt7HvMpvE41k5IBZEylMHoGxH_UlsET"
+    output_folder = "drive_data"
+    os.makedirs(output_folder, exist_ok=True)
+    
+    try:
+        # gdownでフォルダごとダウンロード
+        gdown.download_folder(folder_url, output=output_folder, quiet=False, use_cookies=False)
+    except Exception as e:
+        return f"フォルダのダウンロードに失敗しました: {e}"
+
+    all_text = ""
+    # フォルダ内のPDFとテキストを読み込む
+    for filepath in glob.glob(f"{output_folder}/*"):
+        if filepath.lower().endswith(".pdf"):
+            try:
+                reader = PyPDF2.PdfReader(filepath)
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text:
+                        all_text += text + "\n"
+            except Exception as e:
+                st.warning(f"PDFの読み込みに失敗しました ({filepath}): {e}")
+        elif filepath.lower().endswith(".txt") or filepath.lower().endswith(".csv"):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    all_text += f.read() + "\n"
+            except Exception as e:
+                pass
+                
+    if not all_text.strip():
+        return "フォルダ内に読み込めるPDFやテキストデータが見つかりませんでした。ファイル形式を確認してください。"
+    return all_text
+
+# データ読み込みの実行
+with st.spinner("Googleドライブからデータを読み込んでいます...（初回や更新時は少し時間がかかります）"):
+    context_text = load_drive_data()
 
 # --- 入力フォーム ---
-st.header("📝 貴社の情報を入力してください")
-
-# 単一入力（従業員数）
-emp_count = st.number_input("従業員数（人）", min_value=0, value=5, step=1)
-
-st.write("※以下の項目は、複数ある場合はカンマ（,）やスペースで区切って入力してください。")
-
-# 複数入力可能項目（テキスト入力）
-industry = st.text_input("業種・業界", placeholder="例：製造業, 飲食業, IT業")
-location = st.text_input("事業所の所在地", placeholder="例：東京都港区, 大阪府大阪市")
-items_to_buy = st.text_area("購入したいモノ・サービス", placeholder="例：顧客管理システム, 業務用オーブン, Webサイト制作")
-budget = st.text_area("購入したいモノ・サービスの合計金額", placeholder="例：システム500万円, オーブン200万円")
+st.header("📝 質問や指示を入力してください")
+user_query = st.text_area("内容", placeholder="例：ワインエナジー様の現在の課題と、提案する商品戦略をまとめてください。")
 
 # ボタンが押されたときの処理
-if st.button("利用可能な補助金を判定する", type="primary"):
-    if not industry or not location or not items_to_buy or not budget:
-        st.warning("すべての項目に入力してください。")
+if st.button("AIに回答させる", type="primary"):
+    if not user_query:
+        st.warning("質問や指示を入力してください。")
+    elif "失敗しました" in context_text or "見つかりませんでした" in context_text:
+        st.error(context_text)
+        st.info("💡 フォルダの共有設定が「リンクを知っている全員」になっているか、また中にPDFやテキストファイルが入っているか確認してください。")
     else:
         try:
-            # SecretsからAPIキーを取得
+            # SecretsからAPIキーを取得（前回修正した名称に合わせています）
             api_key = st.secrets["GOOGLE_API_KEY"]
             
             # AIの準備と実行
@@ -35,34 +71,23 @@ if st.button("利用可能な補助金を判定する", type="primary"):
             model = genai.GenerativeModel('gemini-2.5-flash')
             
             prompt = f"""
-            あなたは日本の補助金・助成金の専門家です。
-            以下の企業情報と購入予定のモノ・サービスに基づいて、利用できる可能性のある最新の補助金や助成金（国や自治体のもの）を3つ程度提案し、それぞれの要件にどのように当てはまっているかを解説してください。
-            同時に、以下の経費のうち、何が当てはまらないかも解説してください。
-            補助金制度は頻繁にルールが変わるので、回答は最新の情報から十分にリサーチしてください。
+            あなたは優秀なコンサルタントAIです。
+            以下の【参考資料】（Googleドライブから取得したデータ）を最優先の根拠として、ユーザーの【入力】に対して出力を行ってください。
+            資料にない情報は推測で語らず、「資料に記載がありません」と答えてください。
 
-            【企業情報】
-            - 従業員数: {emp_count}人
-            - 業種・業界: {industry}
-            - 事業所の所在地: {location}
+            【参考資料】
+            {context_text}
 
-            【購入予定】
-            - 購入したいモノ・サービス: {items_to_buy}
-            - 金額: {budget}
-
-            【出力形式の希望】
-            各補助金について以下の構成で、箇条書きで分かりやすく出力してください。
-            1. **候補となる補助金・助成金の名称**
-            2. **おすすめする理由**（入力された情報とどのようにマッチしているか）
-            3. **購入予定のもので対象外となる経費**
+            【入力】
+            {user_query}
             """
             
-            # クルクル回るローディング表示
-            with st.spinner("最新の補助金情報を分析・判定中です..."):
+            with st.spinner("資料を分析して回答を作成中です..."):
                 response = model.generate_content(prompt)
             
             # 結果の表示
-            st.success("✨ 判定が完了しました！")
+            st.success("✨ 完了しました！")
             st.markdown(response.text)
             
         except Exception as e:
-            st.error(f"エラーが発生しました。設定を確認してください。（エラー詳細: {e}）")
+            st.error(f"エラーが発生しました。（詳細: {e}）")
