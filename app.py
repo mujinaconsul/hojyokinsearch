@@ -28,7 +28,7 @@ if st.button("利用可能な補助金を判定する", type="primary"):
     else:
         try:
             # SecretsからAPIキーを取得
-            api_key = st.secrets["GOOGLE_API_KEY"]
+            api_key = st.secrets["AIzaSyD4OFRsfdgP7fbDg0vIa0-hurlBSvbPc1o"]
             
             # AIの準備と実行
             genai.configure(api_key=api_key)
