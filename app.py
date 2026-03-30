@@ -8,25 +8,22 @@ import PyPDF2
 # --- 画面のUI設定 ---
 st.set_page_config(page_title="省力化投資補助金 判定アプリ", page_icon="🏢")
 st.title("🏢 中小企業省力化投資補助金 簡易判定アプリ")
-st.write("自社の状況や導入したい製品を入力すると、最新の公募要領や対象製品リスト（独自データ）に基づき、要件を満たす可能性があるかをAIが判定します。")
-st.warning("⚠️ 注意: AIの回答は参考情報です。実際の申請にあたっては、必ず最新の公募要領をご確認いただくか、認定支援機関等の専門家にご相談ください。")
+st.write("自社の状況や導入したい製品を入力すると、最新の公募要領や対象製品リストに基づき、要件を満たす可能性があるかを判定します。")
+st.warning("⚠️ 注意: 判定結果は参考情報です。実際の申請にあたっては、必ず最新の公募要領をご確認いただくか、専門家にご相談ください。")
 
 # --- Googleドライブからの情報取得 ---
 @st.cache_data(ttl=3600) # 1時間ごとに再読み込み
 def load_drive_data():
-    # ご指定のGoogleドライブフォルダURL
     folder_url = "https://drive.google.com/drive/u/0/folders/1bLt7HvMpvE41k5IBZEylMHoGxH_UlsET"
     output_folder = "drive_data"
     os.makedirs(output_folder, exist_ok=True)
     
     try:
-        # gdownでフォルダをダウンロード
         gdown.download_folder(folder_url, output=output_folder, quiet=False, use_cookies=False)
     except Exception as e:
         return f"フォルダのダウンロードに失敗しました: {e}"
 
     all_text = ""
-    # フォルダ内のPDFとテキストを読み込む
     for filepath in glob.glob(f"{output_folder}/*"):
         if filepath.lower().endswith(".pdf"):
             try:
@@ -49,7 +46,7 @@ def load_drive_data():
     return all_text
 
 # データ読み込みの実行
-with st.spinner("最新の補助金・対象製品データを読み込んでいます..."):
+with st.spinner("最新のデータを読み込んでいます..."):
     context_text = load_drive_data()
 
 # --- 入力フォーム ---
@@ -81,10 +78,8 @@ if st.button("補助金の要件にあてはまるか判定する", type="primar
             
             # AIへの指示（プロンプト）
             prompt = f"""
-            あなたは認定経営革新等支援機関として実務を行う、補助金の専門家AIです。
-            ユーザーは「中小企業省力化投資補助金」の活用を検討している事業者です。
-            以下の【企業情報】と【購入予定】、そして【参考資料】（Googleドライブから取得した最新の公募要領やカタログデータ等）に基づいて、
-            この事業者が同補助金の要件に当てはまる可能性がどの程度あるか判定してください。
+            あなたは補助金の専門家AIです。ユーザーは「中小企業省力化投資補助金」の活用を検討している事業者です。
+            以下の【企業情報】と【購入予定】、および【参考資料】に基づいて、要件に当てはまる可能性を判定してください。
 
             【企業情報】
             - 従業員数: {emp_count}人
@@ -95,12 +90,12 @@ if st.button("補助金の要件にあてはまるか判定する", type="primar
             - 購入したいモノ・サービス: {items_to_buy}
             - 金額: {budget}
 
-            【参考資料（Googleドライブ内のデータ）】
+            【参考資料】
             {context_text}
             
             【出力のルール】
-            1. 必ず【参考資料】の情報を最優先の判断基準としてください。省力化投資補助金は「カタログ登録されている製品」であることが重要である等の特有の要件を踏まえて判定してください。
-            2. 出力は以下の2項目のみとし、指定された形式を厳密に守ってください。挨拶やまとめの言葉は不要です。
+            1. 読み手は事業者自身です。「貴社」という言葉を使い、丁寧で分かりやすい文章にしてください。
+            2. 出力は以下の2項目のみとし、指定された形式を厳密に守ってください。挨拶などは一切不要です。
 
             1. 判定
             ※以下の3つのうちから、最も適切なものを1つだけそのまま出力してください。
@@ -109,15 +104,23 @@ if st.button("補助金の要件にあてはまるか判定する", type="primar
             ・対象の可能性が低い
 
             2. 判定のポイント
-            ※なぜその判定になったのか、【企業情報】や【購入予定】と【参考資料】の要件を照らし合わせて、事業者向けにわかりやすく解説してください。カタログ登録製品の確認など、注意すべき懸念点があればそれも含めてください。
+            ※なぜその判定になったのか、事業者向けに解説してください。
+            ※【重要】必ず100文字以内で簡潔にまとめてください。
             """
             
             with st.spinner("要件と照らし合わせて判定しています..."):
                 response = model.generate_content(prompt)
+                result_text = response.text
             
             # 結果の表示
             st.success("✨ 判定が完了しました！")
-            st.markdown(response.text)
+            st.markdown(result_text)
+            
+            # --- 問い合わせ誘導メッセージの表示条件 ---
+            # AIの出力から「1. 判定」の部分を抽出し、「対象の可能性あり」が選ばれたかチェックする
+            first_part = result_text.split("2. 判定のポイント")[0]
+            if "一部対象の可能性あり" not in first_part and "対象の可能性あり" in first_part:
+                st.info("💡 **【おすすめ】対象となる可能性が高いようです！**\n\n具体的な申請手続きや、導入予定の製品がカタログに登録されているかの確認など、ぜひ当事務所（認定経営革新等支援機関）までお気軽にお問い合わせください。")
             
         except KeyError:
              st.error("APIキーが設定されていません。StreamlitのSecrets設定を確認してください。")
